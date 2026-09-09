@@ -1,0 +1,189 @@
+# RT-DETR implementation with BoT-SORT (Updated with optimized tracker parameters)
+import json
+import os
+import cv2
+import yaml
+import numpy as np
+from ultralytics import RTDETR
+
+def run_clean_cloud_pipeline(video_path, calibration_path, output_json_path):
+    # ---------------------------------------------------------
+    # BLOCK A: INITIALIZATION & METRIC CALIBRATION
+    # ---------------------------------------------------------
+    print("Loading fine-tuned RT-DETR Model weights...")
+    model_path = "/content/runs/detect/basketball_tracking/rtdetr_run1/weights/best.pt"
+
+    if not os.path.exists(model_path):
+        model_path = "/content/drive/MyDrive/rtdetr_basketball_best.pt"
+        print("loaded the one in the drive!!")
+    model = RTDETR(model_path)
+
+    if not os.path.exists(calibration_path):
+        raise FileNotFoundError(f"Please upload your 'calibration.json' file to Colab. Missing at: {calibration_path}")
+
+    with open(calibration_path, 'r') as f:
+        calib_data = json.load(f)
+    H = np.array(calib_data["homography_matrix"], dtype=np.float32)
+    print("3x3 Homography Matrix successfully loaded into Cloud Memory.")
+
+    cap = cv2.VideoCapture(video_path)
+    FRAME_HEIGHT = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+
+    # Dynamic Custom Tracker Configuration Creation
+    custom_tracker_path = "botsort.yaml"
+    custom_tracker_config = {
+        "tracker_type": "botsort",
+        "track_high_thresh": 0.5,
+        "track_low_thresh": 0.15,
+        "new_track_thresh": 0.60,
+        "track_buffer": 60,
+        "match_thresh": 0.8,
+        "gmc_method": "sparseOptFlow",
+        "proximity_thresh": 0.5,
+        "appearance_thresh": 0.25,
+        "with_reid": False
+    }
+    custom_tracker_path = "custom_botsort.yaml"
+    custom_tracker_config = {
+        "tracker_type": "botsort",
+
+    # Detection thresholds
+        "track_high_thresh": 0.50,
+        "track_low_thresh": 0.15,
+        "new_track_thresh": 0.60,
+
+    # Association parameters
+        "track_buffer": 60,
+        "match_thresh": 0.80,
+        "fuse_score": True,
+
+    # Global Motion Compensation
+        "gmc_method": "sparseOptFlow",
+
+    # Appearance matching
+        "proximity_thresh": 0.50,
+        "appearance_thresh": 0.25,
+        "with_reid": False,
+
+    # Required by recent Ultralytics versions
+        "model": "auto"
+    }
+
+    with open(custom_tracker_path, 'w') as f:
+        yaml.dump(custom_tracker_config, f)
+
+    CLOSE_UP_THRESHOLD = FRAME_HEIGHT * 0.35
+    MIN_PLAYERS_REQUIRED = 4
+
+    def transform_pixel_to_meters(pixel_point):
+        x, y = pixel_point
+        vec = np.array([x, y, 1.0], dtype=np.float32)
+        transformed = np.dot(H, vec)
+        w = transformed[2]
+        if w == 0: return [0.0, 0.0]
+        return [float(transformed[0] / w), float(transformed[1] / w)]
+
+    # ---------------------------------------------------------
+    # BLOCK B: ReID TRACKING INFERENCE
+    # ---------------------------------------------------------
+    print(f"Processing tracking pipeline with optimized BoT-SORT for {video_path}...")
+    results = model.track(
+        source=video_path,
+        tracker=custom_tracker_path,
+        imgsz=1280,
+        conf=0.25,
+        persist=True,
+        stream=True
+    )
+
+    tracking_payload = {
+        "metadata": {
+            "video_name": os.path.basename(video_path),
+            "frame_height": FRAME_HEIGHT,
+            "total_frames": 0
+        },
+        "frames": []
+    }
+
+    for frame_idx, r in enumerate(results):
+        frame_data = {
+            "frame_id": frame_idx + 1,
+            "is_valid_court_view": True,
+            "cut_reason": None,
+            "objects": []
+        }
+
+        player_count = 0
+        is_close_up = False
+        raw_frame_objects = []
+
+        if r.boxes is not None and r.boxes.id is not None:
+            boxes = r.boxes.xyxy.cpu().numpy()
+            ids = r.boxes.id.cpu().numpy().astype(int)
+            clss = r.boxes.cls.cpu().numpy().astype(int)
+            confidences = r.boxes.conf.cpu().numpy()
+
+            for box, track_id, cls_id, conf in zip(boxes, ids, clss, confidences):
+                x1, y1, x2, y2 = map(int, box)
+                class_label = r.names[int(cls_id)].lower()
+
+                box_height = y2 - y1
+                if class_label == "player":
+                    player_count += 1
+                    if box_height > CLOSE_UP_THRESHOLD:
+                        is_close_up = True
+
+                obj_data = {
+                    "track_id": int(track_id),
+                    "class": class_label,
+                    "bbox": [x1, y1, x2, y2],
+                    "confidence": float(round(conf, 2))
+                }
+
+                # ---------------------------------------------------------
+                # BLOCK C: CLOUD SPATIAL FILTERING (THE BOUNCER)
+                # ---------------------------------------------------------
+                if class_label == "player":
+                    feet_px = [int((x1 + x2) / 2), y2]
+                    x_m, y_m = transform_pixel_to_meters(feet_px)
+
+                    if -9.0 <= x_m <= 9.0 and -1.5 <= y_m <= 12.5:
+                        obj_data["feet_coord_px"] = feet_px
+                        obj_data["court_coords_meters"] = [round(x_m, 3), round(y_m, 3)]
+                        raw_frame_objects.append(obj_data)
+                else:
+                    center_px = [int((x1 + x2) / 2), int((y1 + y2) / 2)]
+                    x_m, y_m = transform_pixel_to_meters(center_px)
+
+                    if -12.0 <= x_m <= 12.0 and -3.0 <= y_m <= 15.0:
+                        obj_data["center_coord_px"] = center_px
+                        obj_data["court_coords_meters"] = [round(x_m, 3), round(y_m, 3)]
+                        raw_frame_objects.append(obj_data)
+
+            frame_data["objects"] = raw_frame_objects
+
+        # ---------------------------------------------------------
+        # BLOCK D: BROADCAST SCENE-CUT CIRCUITS
+        # ---------------------------------------------------------
+        if is_close_up:
+            frame_data["is_valid_court_view"] = False
+            frame_data["cut_reason"] = "NON_STANDARD_ANGLE"
+            frame_data["objects"] = []
+
+        elif player_count < MIN_PLAYERS_REQUIRED:
+            frame_data["is_valid_court_view"] = False
+            frame_data["cut_reason"] = "INSUFFICIENT_PLAYERS"
+            frame_data["objects"] = []
+
+        tracking_payload["frames"].append(frame_data)
+
+    tracking_payload["metadata"]["total_frames"] = len(tracking_payload["frames"])
+
+    with open(output_json_path, 'w') as f:
+        json.dump(tracking_payload, f, indent=2)
+
+    print(f"Master analytics telemetry saved directly to: {output_json_path}")
+
+# Execute pipeline directly on the cloud instance
+run_clean_cloud_pipeline("court_footage.mp4", "calibration_new.json", "match_tracking_data.json")

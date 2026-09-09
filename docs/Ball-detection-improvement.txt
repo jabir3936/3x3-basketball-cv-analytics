@@ -1,0 +1,38 @@
+Ball tracking and detection improvement plan 
+. Recommended priority order
+If you want a practical order of work, I would do this:
+Phase 1: Quick tracker improvements
+
+    Use separate tracking parameters for ball and players.
+    Increase ball max_age.
+    Lower confidence threshold for updating existing ball tracks.
+    Keep lost ball tracks alive for a few frames.
+    Add interpolated flag.
+
+Phase 2: Motion prediction
+
+    Add Kalman filter with acceleration.
+    Predict ball position during missing frames.
+    Use court-coordinate smoothing.
+    Reject physically impossible jumps.
+
+Phase 3: Occlusion and possession logic
+
+    Detect when ball disappears near players.
+    Assign possible possession.
+    Add ball state machine.
+    Maintain ball state during occlusion.
+
+Phase 4: Recovery mechanisms
+
+    ROI redetection around predicted ball location.
+    Optical flow or frame differencing.
+    Ball trail visualization.
+    Hard-frame mining.
+
+Phase 5: Model/data improvement
+
+    Add motion-blurred ball samples.
+    Add occluded ball samples.
+    Add synthetic ball augmentation.
+    Retrain on failure frames.

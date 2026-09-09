@@ -1,0 +1,144 @@
+================================================================================
+AI SPORTS ANALYTICS ENGINE: 3x3 BASKETBALL PERFORMANCE & TRACKING PLATFORM
+Project Blueprint & 4-Week Sprint Plan
+================================================================================
+
+1. PROJECT OVERVIEW & COMMERCIAL VALUE
+--------------------------------------------------------------------------------
+This portfolio project implements a scalable, semi-automated computer vision pipeline designed to transform raw, fixed-camera wide-angle video footage of 3x3 basketball matches into structured sports analytics, individual tracking telemetry, and deterministic event timelines. 
+
+By leveraging an entirely open-source, permissively licensed (Apache 2.0 / MIT) machine learning stack, this architecture eliminates enterprise reliance on high-cost proprietary systems or legally restrictive AGPL-3.0 frameworks (such as Ultralytics). It demonstrates a viable, low-overhead B2B SaaS architecture tailored for regional leagues, youth academies, and collegiate sports recruiting.
+
+
+2. TECHNICAL ARCHITECTURE & SYSTEM DESIGN
+--------------------------------------------------------------------------------
+[Raw Video Ingestion] 
+          |
+          v
+[OpenCV Frame Reader] -------> [Homography Matrix Transformation]
+          |                                   |
+          v                                   v
+[Permissive AI Detector] --------> [2D Ground Coordinates (meters)]
+ (RT-DETR / YOLOX)                            |
+          |                                   |
+          v                                   v
+[Multi-Object Tracker] ----------> [Spatial Noise / Bench Filters]
+ (ByteTrack / Norfair)                        |
+          |                                   |
+          v                                   v
+[Finite State Machine] <----------------------┘
+ (Clearance & Event Rules)
+          |
+          v
+[Validated JSON Contract] -------> [React.js Synchronized Canvas UI]
+
+Core Architecture Components:
+* Ingestion & Preprocessing: Asynchronous frame decoding using a decoupled multi-threaded OpenCV queue.
+* Court Topology: A 3x3 homography matrix transforms camera pixel points (u, v) into accurate, flat 2D ground plane coordinates in meters (X, Y) on a standard 15m x 11m FIBA half-court.
+* Permissive Tracking: An anchor-free object detector coupled with a linear assignment tracker.
+* Deterministic State Machine: A rule-based logical processor that evaluates trajectory physics and spatial boundaries (verifying the 6.75m clearance rule).
+
+
+3. THE $0 PRODUCTION TECH STACK
+--------------------------------------------------------------------------------
+* Object Detection: RT-DETR or YOLOX (Apache 2.0)
+* Multi-Object Tracking: ByteTrack or Norfair 
+* Backend & API: FastAPI + Python 
+* Database Storage: PostgreSQL + JSONB 
+* Frontend Dashboard: React.js + TailwindCSS 
+* Video Rendering: HTML5 Canvas + Video.js 
+* Containerization: Docker & Docker-Compose 
+
+
+4. 4-WEEK FULL-TIME ENGINEERING TIMELINE
+--------------------------------------------------------------------------------
+
+WEEK 1: Ingestion, Pipeline Architecture, & Spatial Homography
+* Tasks: Initialize FastAPI directory structure. Set up the asynchronous video frame reader. Build an interactive OpenCV script to select the 4 primary court boundary intersections and calculate the perspective transformation matrix.
+* Deliverable: A validated script converting camera pixel inputs into real-world ground coordinates (meters).
+* Key CV Research: Projective geometry, homogeneous coordinates, cv2.getPerspectiveTransform.
+
+WEEK 2: Permissive Object Detection & Multi-Object Tracking
+* Tasks: Integrate pre-trained RT-DETR or YOLOX models via Hugging Face/PyTorch Hub. Map raw bounding box outputs to a ByteTrack pipeline. Implement a spatial filter to isolate the 6 active players and drop noise/spectators.
+* Deliverable: A consistent tracking data log mapping persistent unique IDs to physical bounding boxes frame-by-frame.
+* Key CV Research: Object detection transformers vs. traditional CNNs, Linear Assignment (Hungarian Algorithm), Kalman Filtering.
+
+WEEK 3: Possession State Machine & Spatial Analytics
+* Tasks: Build a Finite State Machine to track ball proximity to player coordinates. Code the 3x3 clearance logic (verifying possession changes past the 6.75m arc). Apply trajectory interpolation to smooth out missing ball locations.
+* Deliverable: A generator that serializes the raw tracking coordinates into an exportable, schema-validated game timeline JSON.
+* Key CV Research: Trajectory smoothing, cubic spline interpolation, Point-in-Polygon (PIP) geometric boundaries.
+
+WEEK 4: Dashboard Canvas Integration & Production Polish
+* Tasks: Build a responsive React.js frontend interface. Synchronize an HTML5 canvas overlay to render dynamic bounding boxes and historical shot vectors over the video runtime loop. Containerize into a docker-compose.yml file.
+* Deliverable: A polished, fully containerized portfolio application and a clean architectural README.
+* Key CV Research: 2D Canvas performance optimization, lightweight Docker builds for ML runtimes.
+
+
+5. UNIFIED DATA CONTRACT SCHEMA (JSON)
+--------------------------------------------------------------------------------
+{
+  "match_id": "b3x3_2026_court_01_mvp",
+  "metadata": {
+    "sport": "3x3_basketball",
+    "video_fps": 30,
+    "total_frames": 5400,
+    "court_dimensions_meters": {"width": 15.0, "length": 11.0}
+  },
+  "court_calibration": {
+    "homography_matrix": [
+      [1.182, -0.294, 98.4],
+      [0.009, 0.912, -32.7],
+      [0.0001, 0.002, 1.0]
+    ]
+  },
+  "event_timeline": [
+    {
+      "event_id": "evt_001",
+      "timestamp_seconds": 12.40,
+      "start_frame": 372,
+      "end_frame": 410,
+      "event_type": "SHOT_ATTEMPT",
+      "initiating_player_id": "p_03",
+      "initiating_team_id": "team_blue",
+      "outcome": "MADE_BASKET",
+      "ai_confidence_scores": {
+        "action_classification": 0.94,
+        "spatial_intersection": 0.97
+      },
+      "spatial_data": {
+        "shot_release_court_meters": {"x": 3.4, "y": 7.2},
+        "shot_distance_meters": 7.5
+      },
+      "attributes": {
+        "shot_value_points": 2,
+        "is_contested": true,
+        "defending_player_id": "p_01"
+      }
+    }
+  ],
+  "frame_tracking_telemetry": [
+    {
+      "frame_number": 372,
+      "timestamp_seconds": 12.40,
+      "possession_state": {
+        "team_in_possession": "team_blue",
+        "is_cleared": true
+      },
+      "ball": {
+        "detected": true,
+        "confidence": 0.89,
+        "bbox_pixel": {"xmin": 710, "ymin": 340, "xmax": 725, "ymax": 355},
+        "court_coords_meters": {"x": 3.2, "y": 7.0}
+      },
+      "tracked_players": [
+        {
+          "player_id": "p_03",
+          "team_id": "team_blue",
+          "confidence_tracking": 0.96,
+          "bbox_pixel": {"xmin": 680, "ymin": 420, "xmax": 720, "ymax": 540},
+          "court_coords_meters": {"x": 3.4, "y": 7.2}
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+Sport Analytics — Project Structure
+====================================
+3x3 basketball tracking / analytics pipeline.
+
+Run scripts from the project root so relative paths resolve correctly.
+
+
+Mapping accuracy workflow (2D court map)
+----------------------------------------
+1) Refit calibration (no off-image clicks; optional wide-angle k1):
+     python scripts/02_calibration/refit_official_homography.py --k1 -0.16
+   Or click landmarks yourself (best next step if wireframe still drifts):
+     python scripts/02_calibration/calibrate_court_interactive.py
+
+2) Full reproject pipeline (feet + H + smooth + stills):
+     python scripts/03_processing/run_mapping_pipeline.py --skip-refit
+
+3) Visual checks:
+     media/checks/official_calibration_checkv2.jpg
+     media/checks/feet_check_frame_*.jpg
+     python scripts/diagnostics/render_mapping_preview.py
+
+4) Full diagnostic render (ball uses possession ground-proxy on map):
+     python scripts/06_visualization/render_with_2dmap.py
+
+
+Top-level layout
+----------------
+run_analytics.py     Main entry
+src/                 Core library (court_projection, lens_undistort, engine, …)
+scripts/             Pipeline steps numbered by workflow order
+data/                JSON / CSV outputs
+models/              Detector weights
+media/               Footage, renders, verification images
+tests/               Sanity checks
+tools/               Model compile utilities
+docs/                Plans and this guide
+dataset/             Training images
+player_crops/        Jersey crops
+
+
+Pipeline scripts
+----------------
+01_detection/        Detectors / trackers
+02_calibration/      Homography + interactive calibrate
+03_processing/       Feet recompute, project, smooth
+04_team_mapping/     Team gates
+05_fsm/              Event FSM
+06_visualization/    Full 2D map render
+07_hoop/             Hoop helpers
+diagnostics/         Feet overlay + mapping preview clip
+
+
+Data
+----
+calibration/         calibration_official_tuned.json (H + optional k1/K)
+tracking/latest/     official + smooth outputs
+tracking/archive/    Historical JSON
+team_mapping/        CSV maps
+fsm/                 FSM timelines
