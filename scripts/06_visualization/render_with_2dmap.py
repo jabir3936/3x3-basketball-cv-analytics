@@ -2,15 +2,17 @@ import cv2
 import json
 import math
 import numpy as np
+from pathlib import Path
 
 # ---------------------------------------------------------
 # SETTINGS
 # ---------------------------------------------------------
 
-VIDEO_PATH = "media/footage/court_footage.mp4"
-TRACKING_JSON = "data/tracking/latest/match_tracking_data_smooth.json"
-FSM_JSON = "data/fsm/match_fsm_data.json"
-OUTPUT_VIDEO_PATH = "media/renders/match_video_diagnostic_with_map.mp4"
+ROOT = Path(__file__).resolve().parents[2]
+VIDEO_PATH = ROOT / "media/footage/court_footage.mp4"
+TRACKING_JSON = ROOT / "data/tracking/latest/match_tracking_data_smooth.json"
+FSM_JSON = ROOT / "data/fsm/match_fsm_data.json"
+OUTPUT_VIDEO_PATH = ROOT / "media/renders/match_video_diagnostic_with_map.mp4"
 
 CANVAS_W = 720
 CANVAS_H = 720
@@ -23,10 +25,13 @@ MIN_Y = -1.0
 
 # Playback speed of the OUTPUT video (1.0 = real time, 0.5 = half, 0.25 = quarter)
 PLAYBACK_SPEED = 0.75
+MAX_PLAYERS_PER_TEAM = 3  # FIBA 3x3: do not render false extra team-labelled detections
+MIN_PLAYER_CONFIDENCE = 0.4
 
 TEAM_COLORS = {
     "team_blue": (255, 130, 0),   # blue dot
     "team_white": (0, 0, 230),    # red dot
+    "unknown": (128, 128, 128),   # grey dot for unassigned players
 }
 
 BALL_COLORS = {
@@ -75,15 +80,70 @@ def draw_text_bg(canvas, text, pos, color=(255,255,255)):
     cv2.rectangle(canvas, (x-2, y-16), (x+280, y+6), (20,20,20), -1)
     cv2.putText(canvas, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1, cv2.LINE_AA)
 
+
+def select_display_players(objects, possession_player_id, previous_ids,
+                           stability_counter):
+    """Keep the three most reliable tracked players for each 3x3 team."""
+    grouped = {team: [] for team in TEAM_COLORS}
+    seen_this_frame = set()
+
+    for obj in objects:
+        if obj.get("class") != "player":
+            continue
+        track_id = obj.get("track_id")
+        team = obj.get("team_id")
+        if team not in TEAM_COLORS:
+            team = "unknown"
+
+        if (
+            not obj.get("court_coords_meters")
+            or obj.get("court_coords_valid") is False
+            or float(obj.get("confidence", 0.0)) < MIN_PLAYER_CONFIDENCE
+        ):
+            continue
+
+        seen_this_frame.add(track_id)
+        stability_counter[track_id] = stability_counter.get(track_id, 0) + 1
+
+        score = float(obj.get("confidence", 0.0))
+        # Mild stability logic so we don't hard-lock onto bench players
+        score += min(stability_counter[track_id], 30) * 0.01
+        if track_id in previous_ids.get(team, set()):
+            score += 0.05
+        if track_id == possession_player_id:
+            score += 1.00
+
+        grouped[team].append((score, obj, team))
+
+    # Decay stability for tracks NOT seen this frame
+    for tid in list(stability_counter):
+        if tid not in seen_this_frame:
+            stability_counter[tid] = max(0, stability_counter[tid] - 2)
+            if stability_counter[tid] == 0:
+                del stability_counter[tid]
+
+    selected = []
+    next_previous = {}
+    for team, candidates in grouped.items():
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        # We no longer cap to MAX_PLAYERS_PER_TEAM to ensure we don't accidentally hide valid players
+        team_players = [obj for _, obj, _ in candidates]
+        for obj in team_players:
+            obj["team_id"] = team
+        selected.extend(team_players)
+        next_previous[team] = {obj.get("track_id") for obj in team_players}
+    return selected, next_previous
+
 # ---------------------------------------------------------
 # LOAD TELEMETRY
 # ---------------------------------------------------------
 
 print("Loading JSON telemetry...")
-with open(TRACKING_JSON, "r") as f:
+with TRACKING_JSON.open("r") as f:
     tracking_frames = {fr["frame_id"]: fr for fr in json.load(f)["frames"]}
 
-with open(FSM_JSON, "r") as f:
+
+with FSM_JSON.open("r") as f:
     fsm_frames = {fr["frame_id"]: fr for fr in json.load(f)["frames"]}
 
 # ---------------------------------------------------------
@@ -91,6 +151,8 @@ with open(FSM_JSON, "r") as f:
 # ---------------------------------------------------------
 
 cap = cv2.VideoCapture(VIDEO_PATH)
+if not cap.isOpened():
+    raise RuntimeError(f"Could not open input video: {VIDEO_PATH}")
 fps = cap.get(cv2.CAP_PROP_FPS)
 orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -103,9 +165,13 @@ out_fps = max(1.0, fps * PLAYBACK_SPEED)
 print(f"Writing output at {out_fps:.2f} fps ({PLAYBACK_SPEED}x speed)")
 
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+OUTPUT_VIDEO_PATH.parent.mkdir(parents=True, exist_ok=True)
 out = cv2.VideoWriter(OUTPUT_VIDEO_PATH, fourcc, out_fps, (resized_w + CANVAS_W, CANVAS_H))
+if not out.isOpened():
+    raise RuntimeError(f"Could not create output video: {OUTPUT_VIDEO_PATH}")
 
-trajectory_history = {}
+previous_displayed_ids = {team: set() for team in TEAM_COLORS}
+stability_counter = {}
 
 print(f"Rendering {total_frames} frames...")
 frame_idx = 0
@@ -125,7 +191,7 @@ while True:
     cut_reason = track_fr.get("cut_reason", "")
 
     # =====================================================
-    # LEFT SIDE: DIAGNOSTIC OVERLAY (unchanged)
+    # LEFT SIDE: DIAGNOSTIC OVERLAY
     # =====================================================
     if is_valid:
         for obj in track_fr.get("objects", []):
@@ -139,13 +205,8 @@ while True:
                     (track_id * 113) % 255,
                     (track_id * 211) % 255
                 )
-                center_x, center_y = int((x1 + x2) / 2), y2
-                hist = trajectory_history.setdefault(track_id, [])
-                hist.append((center_x, center_y))
-                if len(hist) > 15:
-                    hist.pop(0)
-                for i in range(1, len(hist)):
-                    cv2.line(frame, hist[i - 1], hist[i], color, 2)
+                team = obj.get("team_id")
+                color = TEAM_COLORS.get(team, (128, 128, 128))
             else:
                 color = (0, 165, 255)
 
@@ -163,7 +224,6 @@ while True:
         cv2.putText(frame, text,
                     ((frame.shape[1] - text_w) // 2, (frame.shape[0] + text_h) // 2),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 4)
-        trajectory_history = {}
 
     cv2.putText(frame, f"Frame: {frame_id} / {total_frames}", (20, 40),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
@@ -183,77 +243,33 @@ while True:
     zone = fsm_info.get("ball_zone", "UNKNOWN")
 
     poss_px = None
-    ball_px = None
-    player_by_id = {}
 
     if is_valid:
-        # Players: ONLY blue / red dots, no numbers, no gray
-        for obj in track_fr.get("objects", []):
-            if obj.get("class") != "player":
-                continue
-            team = obj.get("team_id")
-            if team not in TEAM_COLORS:      # skip referees / unlabeled
-                continue
-            court = obj.get("court_coords_meters")
-            if not court or obj.get("court_coords_valid") is False:
-                continue
+        display_players, previous_displayed_ids = select_display_players(
+            track_fr.get("objects", []), poss_id, previous_displayed_ids,
+            stability_counter
+        )
+        for obj in display_players:
+            team = obj["team_id"]
+            court = obj["court_coords_meters"]
+            tid = obj.get("track_id")
 
+            # Plot exactly where the smoothed telemetry says to plot
             px = court_to_canvas(court[0], court[1])
-            player_by_id[obj.get("track_id")] = (px, court)
-            cv2.circle(canvas, px, 14, TEAM_COLORS[team], -1)   # plain team dot
+            cv2.circle(canvas, px, 14, TEAM_COLORS[team], -1)
 
-            if obj.get("track_id") == poss_id:
-                cv2.circle(canvas, px, 20, (0, 255, 255), 3)    # possession ring
+            if tid == poss_id:
+                cv2.circle(canvas, px, 20, (0, 255, 255), 3)
+                cv2.circle(canvas, px, 7, (0, 220, 0), -1)
+                cv2.circle(canvas, px, 7, (255, 255, 255), 1)
                 poss_px = px
-
-        # Ball on map: use ground proxy when possessed (airborne center through H is wrong).
-        # - POSSESSED: snap to possession player's court feet
-        # - LOOSE / DETECTED without possession: project center, but fade if far from all players
-        # - LOST / UNKNOWN: hide or keep last only if we have a valid ground sample
-        ball_obj = next((o for o in track_fr.get("objects", []) if o.get("class") == "ball"), None)
-        ball_draw = None
-        ball_proxy = False
-
-        if poss_id is not None and poss_id in player_by_id:
-            ball_draw = player_by_id[poss_id][1]
-            ball_proxy = True
-        elif (
-            ball_obj
-            and ball_obj.get("court_coords_meters")
-            and ball_obj.get("court_coords_valid") is not False
-            and ball_state in ("BALL_DETECTED", "BALL_INTERPOLATED", "BALL_OCCLUDED")
-        ):
-            # Loose ball: only show raw projection if near some player (likely near floor)
-            raw = ball_obj["court_coords_meters"]
-            near = False
-            for _, court in player_by_id.values():
-                if math.hypot(raw[0] - court[0], raw[1] - court[1]) < 3.5:
-                    near = True
-                    break
-            if near or not player_by_id:
-                ball_draw = raw
-
-        if ball_draw is not None:
-            ball_px = court_to_canvas(ball_draw[0], ball_draw[1])
-            color = BALL_COLORS.get(ball_state, (100, 100, 100))
-            cv2.circle(canvas, ball_px, 7, color, -1)
-            cv2.circle(canvas, ball_px, 7, (255, 255, 255), 1)
-            if ball_proxy:
-                cv2.putText(canvas, "ball:ground", (ball_px[0] + 10, ball_px[1] - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1, cv2.LINE_AA)
-
-        # Possession link (only when ball not snapped onto the same player)
-        if poss_px and ball_px and not ball_proxy:
-            cv2.line(canvas, poss_px, ball_px, (0, 255, 255), 2)
 
     # HUD
     draw_text_bg(canvas, f"Ball State: {ball_state}", (10, 30),
                  BALL_COLORS.get(ball_state, (255, 255, 255)))
-    poss_text = f"Possession: {poss_team}" if poss_team else "Possession: NONE"
-    draw_text_bg(canvas, poss_text, (10, 60), (0, 255, 255) if poss_team else (200, 200, 200))
-    draw_text_bg(canvas, f"Shot Zone: {zone}", (10, 90))
+    draw_text_bg(canvas, f"Shot Zone: {zone}", (10, 60))
     clear_color = (0, 255, 0) if clearance == "CLEARANCE_COMPLETED" else (255, 255, 255)
-    draw_text_bg(canvas, f"Clearance: {clearance}", (10, 120), clear_color)
+    draw_text_bg(canvas, f"Clearance: {clearance}", (10, 90), clear_color)
 
     # =====================================================
     # COMBINE + WRITE

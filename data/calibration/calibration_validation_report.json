@@ -1,0 +1,75 @@
+{
+  "passed": true,
+  "mean_error_m": 0.2687588076821204,
+  "worst_error_m": 0.3729498863695035,
+  "thresholds_m": {
+    "mean": 0.5,
+    "worst": 0.75
+  },
+  "checks": [
+    {
+      "name": "CHECK: left 3pt baseline",
+      "pixel": [
+        41,
+        622
+      ],
+      "expected_m": [
+        -6.6,
+        0.0
+      ],
+      "projected_m": [
+        -6.810417045757134,
+        0.05526295515094224
+      ],
+      "error_m": 0.21755304492738117
+    },
+    {
+      "name": "CHECK: left 3pt straight/arc join",
+      "pixel": [
+        90,
+        729
+      ],
+      "expected_m": [
+        -6.6,
+        2.99
+      ],
+      "projected_m": [
+        -6.804078822276803,
+        3.137278461442213
+      ],
+      "error_m": 0.25167262645482996
+    },
+    {
+      "name": "CHECK: left sideline/baseline corner",
+      "pixel": [
+        4,
+        625
+      ],
+      "expected_m": [
+        -7.5,
+        0.0
+      ],
+      "projected_m": [
+        -7.127474583814396,
+        0.017788536723640058
+      ],
+      "error_m": 0.3729498863695035
+    },
+    {
+      "name": "CHECK: right sideline/baseline corner",
+      "pixel": [
+        1293,
+        474
+      ],
+      "expected_m": [
+        7.5,
+        0.0
+      ],
+      "projected_m": [
+        7.662821931166834,
+        -0.16647115675080013
+      ],
+      "error_m": 0.2328596729767669
+    }
+  ]
+}

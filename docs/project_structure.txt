@@ -7,21 +7,35 @@ Run scripts from the project root so relative paths resolve correctly.
 
 Mapping accuracy workflow (2D court map)
 ----------------------------------------
-1) Refit calibration (no off-image clicks; optional wide-angle k1):
-     python scripts/02_calibration/refit_official_homography.py --k1 -0.16
-   Or click landmarks yourself (best next step if wireframe still drifts):
+Run these commands manually in the VS Code / Cursor terminal, in this order.
+The first two are interactive and require clicking court features.
+
+1) Create a real calibration with held-out validation points:
      python scripts/02_calibration/calibrate_court_interactive.py
+   - Green FIT points build H; orange CHECK points validate it.
+   - Use n to skip a landmark that is genuinely not visible.
+   - A calibration is saved only when mean held-out error <= 0.50 m and
+     worst held-out error <= 0.75 m.
+   - Do not use --k1 unless you have measured the lens parameter.
 
-2) Full reproject pipeline (feet + H + smooth + stills):
-     python scripts/03_processing/run_mapping_pipeline.py --skip-refit
+2) Mark the playable floor boundary (excludes boards, referee, benches):
+     python scripts/02_calibration/select_court_floor_polygon.py
 
-3) Visual checks:
-     media/checks/official_calibration_checkv2.jpg
+3) Reproject with the validated H, court-floor gate, and camera motion:
+     python scripts/03_processing/run_mapping_pipeline.py
+   This preserves calibration_official_tuned.json by default.
+
+4) Inspect before a full render:
+     media/checks/official_calibration_check_interactive.jpg
+     media/checks/court_floor_polygon_check.jpg
      media/checks/feet_check_frame_*.jpg
      python scripts/diagnostics/render_mapping_preview.py
 
-4) Full diagnostic render (ball uses possession ground-proxy on map):
+5) Full diagnostic render (ball uses possession ground-proxy on map):
      python scripts/06_visualization/render_with_2dmap.py
+
+Do not use refit_official_homography.py unless intentionally comparing the
+legacy five-point calibration. It overwrites the validated calibration.
 
 
 Top-level layout

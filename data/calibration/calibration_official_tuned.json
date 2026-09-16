@@ -1,44 +1,48 @@
 {
   "homography_matrix": [
     [
-      0.014475909681858084,
-      -0.02315769189245681,
-      3.769968229509892
+      0.040664762747541834,
+      -0.05851738743468287,
+      2.5652968406197174
     ],
     [
-      0.006158503921546467,
-      0.054697633546892034,
-      -33.23541643557785
+      0.016683879252818532,
+      0.14692322933663945,
+      -91.80928349282458
     ],
     [
-      -0.00031450401067263943,
-      0.001975915288152827,
-      1.0
+      -0.00020638436176418252,
+      0.005999055144521648,
+      0.9999999999999999
     ]
   ],
-  "pixel_points": [
+  "fit_pixel_points": [
     [
-      350,
-      570
+      495,
+      568
     ],
     [
-      857,
-      513
+      924,
+      521
     ],
     [
-      613,
-      784
+      704,
+      759
     ],
     [
-      1172,
-      685
+      1201,
+      678
     ],
     [
-      1199,
-      472
+      1227,
+      485
+    ],
+    [
+      1382,
+      550
     ]
   ],
-  "official_points_m": [
+  "fit_official_points_m": [
     [
       -2.45,
       0.0
@@ -58,35 +62,87 @@
     [
       6.6,
       0.0
-    ]
-  ],
-  "calibration_frame_index": 99,
-  "mean_reprojection_error_m": 0.02655647077926907,
-  "fov_deg": 85.0,
-  "k1": -0.16,
-  "notes": "H is fit in undistorted space when k1!=0. Projection undistorts pixels first.",
-  "camera_matrix": [
-    [
-      1047.6561610265005,
-      0.0,
-      960.0
     ],
     [
-      0.0,
-      1047.6561610265005,
-      540.0
-    ],
-    [
-      0.0,
-      0.0,
-      1.0
+      6.6,
+      2.99
     ]
   ],
-  "dist_coeffs": [
-    -0.16,
-    0.0,
-    0.0,
-    0.0,
-    0.0
-  ]
+  "validation": {
+    "passed": true,
+    "mean_error_m": 0.2687588076821204,
+    "worst_error_m": 0.3729498863695035,
+    "thresholds_m": {
+      "mean": 0.5,
+      "worst": 0.75
+    },
+    "checks": [
+      {
+        "name": "CHECK: left 3pt baseline",
+        "pixel": [
+          41,
+          622
+        ],
+        "expected_m": [
+          -6.6,
+          0.0
+        ],
+        "projected_m": [
+          -6.810417045757134,
+          0.05526295515094224
+        ],
+        "error_m": 0.21755304492738117
+      },
+      {
+        "name": "CHECK: left 3pt straight/arc join",
+        "pixel": [
+          90,
+          729
+        ],
+        "expected_m": [
+          -6.6,
+          2.99
+        ],
+        "projected_m": [
+          -6.804078822276803,
+          3.137278461442213
+        ],
+        "error_m": 0.25167262645482996
+      },
+      {
+        "name": "CHECK: left sideline/baseline corner",
+        "pixel": [
+          4,
+          625
+        ],
+        "expected_m": [
+          -7.5,
+          0.0
+        ],
+        "projected_m": [
+          -7.127474583814396,
+          0.017788536723640058
+        ],
+        "error_m": 0.3729498863695035
+      },
+      {
+        "name": "CHECK: right sideline/baseline corner",
+        "pixel": [
+          1293,
+          474
+        ],
+        "expected_m": [
+          7.5,
+          0.0
+        ],
+        "projected_m": [
+          7.662821931166834,
+          -0.16647115675080013
+        ],
+        "error_m": 0.2328596729767669
+      }
+    ]
+  },
+  "calibration_frame_index": 900,
+  "notes": "Validated with held-out landmarks; points are undistorted if k1 is supplied."
 }

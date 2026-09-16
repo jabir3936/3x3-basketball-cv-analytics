@@ -118,3 +118,35 @@ def project_ball_center(
 def in_strict_court(meters: Sequence[float]) -> bool:
     x, y = meters
     return COURT_X_MIN <= x <= COURT_X_MAX and COURT_Y_MIN <= y <= COURT_Y_MAX
+
+
+def point_in_polygon(point: Sequence[float], polygon: Sequence[Sequence[float]]) -> bool:
+    """Return whether a 2D point is inside a closed polygon (boundary included)."""
+    if len(polygon) < 3:
+        return False
+    x, y = map(float, point)
+    inside = False
+    for i, a in enumerate(polygon):
+        b = polygon[(i + 1) % len(polygon)]
+        ax, ay = map(float, a)
+        bx, by = map(float, b)
+        if (ay > y) != (by > y):
+            x_at_y = (bx - ax) * (y - ay) / (by - ay) + ax
+            if x <= x_at_y:
+                inside = not inside
+    return inside
+
+
+def feet_within_calibration_floor(
+    feet_px: Sequence[float],
+    transform_to_calibration: np.ndarray,
+    calibration_floor_polygon_px: Sequence[Sequence[float]],
+    K: Optional[np.ndarray] = None,
+    dist: Optional[np.ndarray] = None,
+) -> bool:
+    """Test feet against a floor polygon in calibration-frame undistorted pixels."""
+    ux, uy = undistort_point(feet_px, K, dist)
+    q = transform_to_calibration @ np.array([ux, uy, 1.0], dtype=np.float64)
+    if abs(q[2]) < 1e-9:
+        return False
+    return point_in_polygon((q[0] / q[2], q[1] / q[2]), calibration_floor_polygon_px)
