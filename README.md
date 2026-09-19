@@ -1,4 +1,7 @@
-# court-vision-3x3
+# Court-vision-3x3
+
+<img width="800" height="288" alt="ezgif-55a7b6abacccf723" src="https://github.com/user-attachments/assets/36e1ec2c-471f-47d8-8503-36d688411408" />
+
 
 3x3 basketball analytics from a single broadcast camera: player & ball tracking, metric court mapping, team classification, a possession/clearance FSM, and live top-down 2D court visualization.
 
