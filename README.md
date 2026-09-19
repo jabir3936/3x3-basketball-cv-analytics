@@ -1,4 +1,4 @@
-# Court-vision-3x3
+# Court-vision-3x3 analytics
 
 <img width="800" height="288" alt="ezgif-55a7b6abacccf723" src="https://github.com/user-attachments/assets/36e1ec2c-471f-47d8-8503-36d688411408" />
 
